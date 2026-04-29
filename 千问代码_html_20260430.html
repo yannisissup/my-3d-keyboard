@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>zFrontier 3D 展示原型 - Smurve80</title>
+    <style>
+        /* --- 基础样式重置 --- */
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f5f5f5; color: #333; }
+        
+        /* --- 商品详情页布局 --- */
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; display: flex; flex-wrap: wrap; gap: 30px; }
+        
+        /* --- 左侧：3D 展示区 --- */
+        .product-visual { flex: 1; min-width: 300px; height: 500px; background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); position: relative; overflow: hidden; }
+        
+        /* 3D 画布 */
+        #canvas-container { width: 100%; height: 100%; cursor: grab; }
+        #canvas-container:active { cursor: grabbing; }
+
+        /* 3D 场景中的热点标签 */
+        .hotspot {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none; /* 让鼠标事件穿透 */
+            opacity: 0;
+            transition: opacity 0.3s;
+            transform: translate(-50%, -100%);
+            margin-top: -10px;
+        }
+        .hotspot::after {
+            content: ''; position: absolute; top: 100%; left: 50%; margin-left: -5px;
+            border-width: 5px; border-style: solid; border-color: rgba(0,0,0,0.8) transparent transparent transparent;
+        }
+
+        /* --- 右侧：详情介绍区 --- */
+        .product-details { flex: 1; min-width: 300px; padding: 10px; }
+        h1 { margin-top: 0; font-size: 24px; color: #222; }
+        .price { font-size: 20px; color: #e74c3c; font-weight: bold; margin-bottom: 20px; display: block; }
+        
+        .specs { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .specs li { margin-bottom: 10px; list-style-type: none; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .specs li:last-child { border: none; }
+        
+        /* 颜色选择器 */
+        .color-selector { margin-bottom: 20px; }
+        .color-label { font-weight: bold; margin-bottom: 10px; display: block; }
+        .color-btn {
+            padding: 8px 16px; border: 1px solid #ddd; background: #fff; cursor: pointer; border-radius: 4px; margin-right: 10px; transition: all 0.2s;
+        }
+        .color-btn.active { background: #333; color: #fff; border-color: #333; }
+
+        /* 描述文本 */
+        .description { line-height: 1.6; color: #666; font-size: 14px; }
+    </style>
+    <!-- 引入 Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 引入 OrbitControls (用于鼠标控制旋转) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <!-- 左侧 3D 区域 -->
+    <div class="product-visual">
+        <div id="canvas-container"></div>
+        <!-- 这是一个跟随 3D 模型的 HTML 标签 -->
+        <div id="hotspot-1" class="hotspot">Gasket 结构</div>
+    </div>
+
+    <!-- 右侧 详情区域 -->
+    <div class="product-details">
+        <h1>Smurve80 真曲面机械键盘</h1>
+        <span class="price">¥599.00</span>
+
+        <div class="color-selector">
+            <span class="color-label">选择配色:</span>
+            <button class="color-btn active" onclick="changeColor('sandstone')">砂岩色 (Sandstone)</button>
+            <button class="color-btn" onclick="changeColor('graphite')">石墨色 (Graphite)</button>
+        </div>
+
+        <ul class="specs">
+            <li><strong>配列:</strong> 80% 真曲面人体工学</li>
+            <li><strong>连接:</strong> 三模无线 (2.4G / 蓝牙 / 有线)</li>
+            <li><strong>材质:</strong> 高品质 ABS 塑料</li>
+        </ul>
+
+        <div class="description">
+            <p>Smurve80 采用了独特的真曲面设计，完美贴合手指自然敲击的弧度。内置 Gasket 垫片结构，提供软弹的手感与纯净的打字音。</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 1. 初始化 Three.js 场景 ---
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf5f5f5); // 背景色与网页一致
+
+    // 相机设置
+    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+    camera.position.set(0, 15, 20); // 相机位置：偏高一点，俯视
+    camera.lookAt(0, 0, 0);
+
+    // 渲染器设置
+    const renderer = new THREE.WebGLRenderer({ antialias: true }); // 开启抗锯齿
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.shadowMap.enabled = true; // 开启阴影
+    container.appendChild(renderer.domElement);
+
+    // --- 2. 灯光设置 ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // 环境光
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8); // 平行光（模拟太阳）
+    dirLight.position.set(10, 20, 10);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    // --- 3. 创建物体 (模拟键盘) ---
+    // 注意：实际项目中这里会使用 GLTFLoader 加载外部 .glb 模型
+    // 这里为了代码能直接运行，用几何体组合代替
+    
+    const keyboardGroup = new THREE.Group();
+
+    // 键盘底座
+    const geometry = new THREE.BoxGeometry(12, 1, 5);
+    // 创建一个稍微圆润一点的材质
+    const material = new THREE.MeshStandardMaterial({ 
+        color: 0xd2b48c, // 默认砂岩色
+        roughness: 0.5,
+        metalness: 0.1
+    });
+    const keyboardBase = new THREE.Mesh(geometry, material);
+    keyboardBase.receiveShadow = true;
+    keyboardBase.castShadow = true;
+    
+    // 模拟曲面 (简单的旋转底座)
+    keyboardBase.rotation.x = -0.15; 
+    keyboardGroup.add(keyboardBase);
+
+    // 模拟键帽区域 (简单的平面示意)
+    const keycapGeo = new THREE.BoxGeometry(11.5, 0.2, 4.5);
+    const keycapMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    const keycaps = new THREE.Mesh(keycapGeo, keycapMat);
+    keycaps.position.y = 0.6;
+    keycaps.rotation.x = -0.15;
+    keyboardGroup.add(keycaps);
+
+    scene.add(keyboardGroup);
+
+    // --- 4. 控制器 (鼠标拖拽旋转) ---
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; // 开启阻尼惯性
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 - 0.1; // 限制不能转到地底下
+
+    // --- 5. 动画循环 ---
+    // 定义一个全局变量来存储动画ID，方便管理
+    let animationId;
+
+    function animate() {
+        animationId = requestAnimationFrame(animate); // 正确获取动画ID
+        controls.update(); // 更新控制器
+        updateHotspot(); // 更新热点位置
+        renderer.render(scene, camera); // 渲染场景
+    }
+    animate(); // 启动动画
+
+    // --- 6. 响应式处理 ---
+    window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    // --- 7. 业务逻辑：切换颜色 ---
+    window.changeColor = function(color) {
+        // 更新按钮状态
+        document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+
+        // 更新 3D 模型颜色
+        if (color === 'sandstone') {
+            keyboardBase.material.color.setHex(0xd2b48c); // 砂岩色
+        } else if (color === 'graphite') {
+            keyboardBase.material.color.setHex(0x36454f); // 石墨色
+        }
+    };
+
+    // --- 8. 业务逻辑：热点跟随 (简单版) ---
+    // 将 3D 坐标投影到 2D 屏幕坐标，让 HTML 标签跟随模型上的点
+    function updateHotspot() {
+        const hotspot = document.getElementById('hotspot-1');
+        // 假设我们要标注键盘中心
+        const vector = new THREE.Vector3(0, 1, 0); 
+        vector.project(camera);
+
+        const x = (vector.x * .5 + .5) * container.clientWidth;
+        const y = (-(vector.y * .5) + .5) * container.clientHeight;
+
+        hotspot.style.left = `${x}px`;
+        hotspot.style.top = `${y}px`;
+        hotspot.style.opacity = 1;
+    }
+    
+    // --- 9. 页面卸载时清理动画 ---
+    window.addEventListener('beforeunload', () => {
+        if (animationId) {
+            cancelAnimationFrame(animationId);
+        }
+    });
+
+</script>
+
+</body>
+</html>
